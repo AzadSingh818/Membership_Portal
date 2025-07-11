@@ -1,7 +1,8 @@
-// app/api/member/register/route.ts - FIXED VERSION
+// app/api/member/register/route.ts - FIXED VERSION WITH EMAIL NOTIFICATION
 import { NextRequest, NextResponse } from 'next/server'
 import { sql } from '@vercel/postgres'
 import bcrypt from 'bcryptjs'
+import { sendMemberRegistrationEmail } from '@/lib/email' // Import email function
 
 function generateMembershipId(orgName: string, firstName: string, lastName: string): string {
   const orgCode = orgName.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, 'X')
@@ -157,6 +158,33 @@ export async function POST(request: NextRequest) {
       membershipId: newApplication.membership_id
     })
 
+    // 🔥 NEW: Send registration confirmation email
+    console.log('📧 Sending registration confirmation email...')
+    let emailSent = false
+    let emailError = null
+
+    try {
+      emailSent = await sendMemberRegistrationEmail({
+        email: newApplication.email,
+        firstName: newApplication.first_name,
+        lastName: newApplication.last_name,
+        membershipId: newApplication.membership_id,
+        temporaryPassword: temporaryPassword,
+        organizationName: organizationName,
+        submittedAt: new Date(newApplication.created_at).toLocaleDateString('en-IN', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        })
+      })
+      console.log('📧 Registration email sent successfully ✅')
+    } catch (error) {
+      console.error('❌ Failed to send registration email:', error)
+      emailError = error instanceof Error ? error.message : 'Unknown email error'
+      emailSent = false
+    }
+
+    // Return success response with email notification status
     return NextResponse.json({
       success: true,
       message: 'Membership application submitted successfully!',
@@ -168,11 +196,21 @@ export async function POST(request: NextRequest) {
         email: newApplication.email,
         submittedAt: newApplication.created_at
       },
+      emailNotification: {
+        sent: emailSent,
+        message: emailSent 
+          ? '📧 Registration confirmation email sent to your email address' 
+          : '⚠️ Registration successful but email notification failed. Please save your credentials.',
+        error: emailError || undefined
+      },
       important_notice: {
         status: 'PENDING ADMIN APPROVAL',
         message: 'You can login with these credentials, but access is limited until approved',
         next_steps: [
           'Your application has been sent to the organization admin',
+          emailSent 
+            ? 'Check your email for detailed instructions and login credentials'
+            : 'Please save your Membership ID and Password securely',
           'You can login now but with limited access',
           'Wait for admin approval for full dashboard access',
           'You will receive notification once approved'
