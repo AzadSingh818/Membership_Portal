@@ -68,6 +68,7 @@ export interface OTP {
 
 // 🆕 NEW: Member interface for member login
 export interface Member {
+  status: string;
   organization_name: any;
   id: number;
   membership_id?: string;
@@ -917,15 +918,23 @@ export async function getUserByEmail(email: string): Promise<User | null> {
 // ========================================
 
 // 🔧 FIX: Add getUserByMembershipId function (MISSING)
+// 🔧 REPLACE this function in lib/database.ts 
+// Find: export async function getUserByMembershipId(membershipId: string): Promise<Member | null>
+
 export async function getUserByMembershipId(membershipId: string): Promise<Member | null> {
   try {
     console.log('🔍 Looking up user by membership ID:', membershipId);
     
-    // Strategy 1: Try 'members' table first
+    // ✅ STRATEGY 1: Try 'members' table first (approved members)
     try {
       const result = await sql`
-        SELECT * FROM members 
-        WHERE membership_id = ${membershipId} AND is_active = true
+        SELECT 
+          m.*,
+          o.name as organization_name
+        FROM members m
+        LEFT JOIN organizations o ON m.organization_id = o.id
+        WHERE m.membership_id = ${membershipId} 
+        AND (m.is_active = true OR m.status = 'approved')
       `;
 
       if (result.rows && result.rows.length > 0) {
@@ -937,11 +946,62 @@ export async function getUserByMembershipId(membershipId: string): Promise<Membe
       console.log('❌ members table not found or error:', error.message);
     }
 
-    // Strategy 2: Try 'users' table as fallback
+    // ✅ STRATEGY 2: Try 'membership_applications' table (NEW - MISSING FALLBACK!)
     try {
       const result = await sql`
-        SELECT * FROM users 
-        WHERE membership_id = ${membershipId} AND is_active = true
+        SELECT 
+          ma.*,
+          o.name as organization_name,
+          ma.status,
+          ma.membership_id,
+          ma.first_name,
+          ma.last_name,
+          ma.email,
+          ma.phone,
+          true as is_active
+        FROM membership_applications ma
+        LEFT JOIN organizations o ON ma.organization_id = o.id
+        WHERE ma.membership_id = ${membershipId} 
+        AND ma.status IN ('approved', 'pending')
+      `;
+
+      if (result.rows && result.rows.length > 0) {
+        const application = result.rows[0] as any;
+        console.log('✅ Member found in membership_applications table:', { 
+          id: application.id, 
+          membership_id: membershipId,
+          status: application.status 
+        });
+        
+        // Convert application to member format
+        return {
+          id: application.id,
+          membership_id: application.membership_id,
+          first_name: application.first_name,
+          last_name: application.last_name,
+          email: application.email,
+          phone: application.phone,
+          is_active: true,
+          status: application.status,
+          organization_name: application.organization_name,
+          created_at: application.created_at,
+          updated_at: application.updated_at
+        } as Member;
+      }
+    } catch (error: any) {
+      console.log('❌ membership_applications table not found or error:', error.message);
+    }
+
+    // ✅ STRATEGY 3: Try 'users' table as fallback
+    try {
+      const result = await sql`
+        SELECT 
+          u.*,
+          o.name as organization_name
+        FROM users u
+        LEFT JOIN organizations o ON u.organization_id = o.id
+        WHERE u.membership_id = ${membershipId} 
+        AND u.is_active = true
       `;
 
       if (result.rows && result.rows.length > 0) {
@@ -953,7 +1013,7 @@ export async function getUserByMembershipId(membershipId: string): Promise<Membe
       console.log('❌ users table not found or error:', error.message);
     }
 
-    // Strategy 3: Try 'user_profiles' table
+    // ✅ STRATEGY 4: Try 'user_profiles' table
     try {
       const result = await sql`
         SELECT * FROM user_profiles 
