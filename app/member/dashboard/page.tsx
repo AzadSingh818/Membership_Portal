@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   User,
   Mail,
@@ -31,25 +32,28 @@ import {
   CreditCard,
   FileText,
   Download,
+  Award,
+  Loader2,
 } from "lucide-react"
 import Link from "next/link"
 
 interface Member {
   id: string
-  firstName: string
-  lastName: string
+  first_name: string
+  last_name: string
   email: string
   phone?: string
   address?: string
   designation?: string
   experience?: string
-  membershipId: string
-  organizationName: string
-  organizationId: number
-  joinDate: string
+  membership_id: string
+  organization_name: string
+  organization_id: number
+  join_date: string
   status: string
   achievements?: string
-  paymentMethod?: string
+  payment_method?: string
+  created_at?: string
 }
 
 export default function MemberDashboard() {
@@ -67,6 +71,7 @@ export default function MemberDashboard() {
     phone: "",
     address: "",
     designation: "",
+    experience: "",
     achievements: "",
   })
 
@@ -77,56 +82,100 @@ export default function MemberDashboard() {
     confirmPassword: "",
   })
 
+  // ✅ FETCH REAL MEMBER DATA FROM API
   useEffect(() => {
-    // In a real app, get this from authentication context or API
-    const demoMember = {
-      id: "demo-member-id",
-      firstName: "John",
-      lastName: "Doe",
-      email: "john.doe@example.com",
-      phone: "+1-555-123-4567",
-      address: "123 Main Street, City, State 12345",
-      designation: "Software Engineer",
-      experience: "5 years",
-      membershipId: "ENG240001",
-      organizationName: "Engineering Association",
-      organizationId: 1,
-      joinDate: "2024-01-15",
-      status: "active",
-      achievements: "Certified Software Developer, Team Lead for 2 projects",
-      paymentMethod: "bank_transfer",
-    }
-    
-    setCurrentMember(demoMember)
-    setProfileForm({
-      phone: demoMember.phone || "",
-      address: demoMember.address || "",
-      designation: demoMember.designation || "",
-      achievements: demoMember.achievements || "",
-    })
-    setLoading(false)
+    fetchMemberData()
   }, [])
+
+  const fetchMemberData = async () => {
+    try {
+      setLoading(true)
+      setError("")
+      
+      // ✅ Get member data from API (authentication token should be handled by middleware)
+      const response = await fetch("/api/member/profile", {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include", // Include cookies for authentication
+      })
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          // Redirect to login if not authenticated
+          window.location.href = "/member/login";
+          return; // Ensure no further code runs after redirect
+        }
+        throw new Error("Failed to fetch member data");
+      }
+
+      const data = await response.json()
+      
+      if (data.success && data.member) {
+        const member = data.member
+        console.log("✅ Member data loaded:", member)
+        
+        setCurrentMember(member)
+        setProfileForm({
+          phone: member.phone || "",
+          address: member.address || "",
+          designation: member.designation || "",
+          experience: member.experience || "",
+          achievements: member.achievements || "",
+        })
+      } else {
+        throw new Error(data.error || "No member data found")
+      }
+    } catch (err: any) {
+      console.error("❌ Error fetching member data:", err)
+      setError(err.message || "Failed to load member data")
+      
+      // ✅ FALLBACK: Redirect to login if authentication fails
+      if (err.message.includes("auth") || err.message.includes("401")) {
+        setTimeout(() => {
+          window.location.href = "/member/login"
+        }, 2000)
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleProfileUpdate = async () => {
     if (!currentMember) return
 
     try {
       setLoading(true)
+      setError("")
+      setSuccess("")
+
       const response = await fetch("/api/member/profile", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(profileForm),
       })
 
-      if (response.ok) {
+      const data = await response.json()
+
+      if (response.ok && data.success) {
         setSuccess("Profile updated successfully")
         setIsEditing(false)
         // Update current member data
-        setCurrentMember(prev => prev ? { ...prev, ...profileForm } : null)
+        setCurrentMember(prev => prev ? { 
+          ...prev, 
+          phone: profileForm.phone,
+          address: profileForm.address, 
+          designation: profileForm.designation,
+          experience: profileForm.experience,
+          achievements: profileForm.achievements,
+        } : null)
       } else {
-        setError("Failed to update profile")
+        setError(data.error || "Failed to update profile")
       }
-    } catch (err) {
+    } catch (err: any) {
+      console.error("❌ Error updating profile:", err)
       setError("Error updating profile")
     } finally {
       setLoading(false)
@@ -146,16 +195,22 @@ export default function MemberDashboard() {
 
     try {
       setLoading(true)
+      setError("")
+      setSuccess("")
+
       const response = await fetch("/api/member/change-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           currentPassword: passwordForm.currentPassword,
           newPassword: passwordForm.newPassword,
         }),
       })
 
-      if (response.ok) {
+      const data = await response.json()
+
+      if (response.ok && data.success) {
         setSuccess("Password changed successfully")
         setShowPasswordDialog(false)
         setPasswordForm({
@@ -164,10 +219,10 @@ export default function MemberDashboard() {
           confirmPassword: "",
         })
       } else {
-        const data = await response.json()
         setError(data.error || "Failed to change password")
       }
-    } catch (err) {
+    } catch (err: any) {
+      console.error("❌ Error changing password:", err)
       setError("Error changing password")
     } finally {
       setLoading(false)
@@ -176,51 +231,112 @@ export default function MemberDashboard() {
 
   const handleLogout = async () => {
     try {
-      await fetch("/api/auth/logout", { method: "POST" })
+      await fetch("/api/auth/logout", { 
+        method: "POST",
+        credentials: "include"
+      })
       window.location.href = "/member/login"
     } catch (err) {
+      // Force logout even if API call fails
       window.location.href = "/member/login"
     }
   }
 
-  const handleDownloadMembershipCard = () => {
-    // In a real app, this would generate and download a PDF membership card
-    alert("Membership card download feature would be implemented here")
+  const handleDownloadMembershipCard = async () => {
+    try {
+      const response = await fetch("/api/member/download-card", {
+        method: "GET",
+        credentials: "include",
+      })
+      
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `membership-card-${currentMember?.membership_id}.pdf`
+        a.click()
+        window.URL.revokeObjectURL(url)
+      } else {
+        alert("Membership card download is not available yet")
+      }
+    } catch (err) {
+      console.error("Error downloading membership card:", err)
+      alert("Error downloading membership card")
+    }
   }
 
   const getStatusBadge = (status: string) => {
     const statusConfig = {
-      active: { label: "Active", variant: "default" as const, color: "bg-green-100 text-green-800" },
-      inactive: { label: "Inactive", variant: "secondary" as const, color: "bg-gray-100 text-gray-800" },
-      suspended: { label: "Suspended", variant: "destructive" as const, color: "bg-red-100 text-red-800" },
+      active: { label: "Active", color: "bg-green-100 text-green-800" },
+      approved: { label: "Active", color: "bg-green-100 text-green-800" },
+      pending: { label: "Pending", color: "bg-yellow-100 text-yellow-800" },
+      inactive: { label: "Inactive", color: "bg-gray-100 text-gray-800" },
+      suspended: { label: "Suspended", color: "bg-red-100 text-red-800" },
+      rejected: { label: "Rejected", color: "bg-red-100 text-red-800" },
     }
 
     const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.active
     return <Badge className={config.color}>{config.label}</Badge>
   }
 
+  const getPaymentMethodDisplay = (method: string) => {
+    const paymentMethods: { [key: string]: string } = {
+      bank_transfer: "Bank Transfer",
+      credit_card: "Credit Card", 
+      debit_card: "Debit Card",
+      cash: "Cash Payment",
+      check: "Check"
+    }
+    return paymentMethods[method] || method.replace('_', ' ').split(' ').map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1)
+    ).join(' ')
+  }
+
+  const getExperienceDisplay = (exp: string) => {
+    const experienceLevels: { [key: string]: string } = {
+      "0-2": "0-2 years",
+      "3-5": "3-5 years", 
+      "6-10": "6-10 years",
+      "11-15": "11-15 years",
+      "16-20": "16-20 years",
+      "20+": "20+ years"
+    }
+    return experienceLevels[exp] || exp
+  }
+
+  // ✅ LOADING STATE
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p>Loading dashboard...</p>
+          <Loader2 className="animate-spin h-8 w-8 text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-600">Loading your dashboard...</p>
         </div>
       </div>
     )
   }
 
+  // ✅ ERROR STATE - NO MEMBER DATA
   if (!currentMember) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Card>
+        <Card className="max-w-md">
           <CardContent className="p-6 text-center">
-            <User className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+            <AlertCircle className="w-12 h-12 mx-auto mb-4 text-red-500" />
             <h2 className="text-lg font-semibold mb-2">Access Denied</h2>
-            <p className="text-gray-600 mb-4">Please login to access the member dashboard.</p>
-            <Link href="/member/login">
-              <Button>Go to Login</Button>
-            </Link>
+            <p className="text-gray-600 mb-4">
+              {error || "Unable to load member data. Please login again."}
+            </p>
+            <div className="space-y-2">
+              <Link href="/member/login">
+                <Button className="w-full">Go to Login</Button>
+              </Link>
+              <Button variant="outline" onClick={fetchMemberData} className="w-full">
+                <Loader2 className="w-4 h-4 mr-2" />
+                Try Again
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -240,7 +356,7 @@ export default function MemberDashboard() {
                 </div>
                 <div>
                   <h1 className="text-xl font-semibold text-gray-900">Member Dashboard</h1>
-                  <p className="text-xs text-gray-500">Welcome, {currentMember.firstName}</p>
+                  <p className="text-xs text-gray-500">Welcome, {currentMember.first_name}</p>
                 </div>
               </div>
               {getStatusBadge(currentMember.status)}
@@ -249,14 +365,14 @@ export default function MemberDashboard() {
               <div className="flex items-center space-x-2">
                 <Avatar className="w-8 h-8">
                   <AvatarFallback className="bg-blue-100 text-blue-600">
-                    {currentMember.firstName[0]}{currentMember.lastName[0]}
+                    {currentMember.first_name[0]}{currentMember.last_name[0]}
                   </AvatarFallback>
                 </Avatar>
                 <div className="hidden sm:block">
                   <p className="text-sm font-medium text-gray-900">
-                    {currentMember.firstName} {currentMember.lastName}
+                    {currentMember.first_name} {currentMember.last_name}
                   </p>
-                  <p className="text-xs text-gray-500">ID: {currentMember.membershipId}</p>
+                  <p className="text-xs text-gray-500">ID: {currentMember.membership_id}</p>
                 </div>
               </div>
               <Button variant="ghost" size="sm">
@@ -279,6 +395,14 @@ export default function MemberDashboard() {
           <Alert variant="destructive" className="mb-6">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>{error}</AlertDescription>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="mt-2" 
+              onClick={() => setError("")}
+            >
+              Dismiss
+            </Button>
           </Alert>
         )}
         
@@ -286,6 +410,14 @@ export default function MemberDashboard() {
           <Alert className="mb-6 border-green-200 bg-green-50">
             <CheckCircle className="h-4 w-4 text-green-600" />
             <AlertDescription className="text-green-800">{success}</AlertDescription>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="mt-2" 
+              onClick={() => setSuccess("")}
+            >
+              Dismiss
+            </Button>
           </Alert>
         )}
 
@@ -296,26 +428,26 @@ export default function MemberDashboard() {
               <div className="flex items-center space-x-4">
                 <Avatar className="w-16 h-16">
                   <AvatarFallback className="bg-blue-600 text-white text-lg">
-                    {currentMember.firstName[0]}{currentMember.lastName[0]}
+                    {currentMember.first_name[0]}{currentMember.last_name[0]}
                   </AvatarFallback>
                 </Avatar>
                 <div>
                   <h3 className="text-xl font-semibold text-gray-900">
-                    {currentMember.firstName} {currentMember.lastName}
+                    {currentMember.first_name} {currentMember.last_name}
                   </h3>
                   <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
                     <div className="flex items-center gap-1">
                       <Building className="w-3 h-3" />
-                      <span>{currentMember.organizationName}</span>
+                      <span>{currentMember.organization_name}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <Calendar className="w-3 h-3" />
-                      <span>Joined {new Date(currentMember.joinDate).toLocaleDateString()}</span>
+                      <span>Joined {new Date(currentMember.join_date || currentMember.created_at || '').toLocaleDateString()}</span>
                     </div>
                   </div>
                   <div className="mt-2">
                     <Badge className="bg-blue-100 text-blue-800">
-                      Membership ID: {currentMember.membershipId}
+                      Membership ID: {currentMember.membership_id}
                     </Badge>
                   </div>
                 </div>
@@ -335,9 +467,17 @@ export default function MemberDashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">Membership Status</p>
-                  <p className="text-2xl font-bold text-gray-900">Active</p>
+                  <p className="text-2xl font-bold text-gray-900 capitalize">
+                    {currentMember.status === 'approved' ? 'Active' : currentMember.status}
+                  </p>
                 </div>
-                <CheckCircle className="w-8 h-8 text-green-500" />
+                <CheckCircle className={`w-8 h-8 ${
+                  currentMember.status === 'active' || currentMember.status === 'approved' 
+                    ? 'text-green-500' 
+                    : currentMember.status === 'pending'
+                    ? 'text-yellow-500'
+                    : 'text-gray-400'
+                }`} />
               </div>
             </CardContent>
           </Card>
@@ -347,7 +487,7 @@ export default function MemberDashboard() {
                 <div>
                   <p className="text-sm font-medium text-gray-600">Member Since</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {new Date(currentMember.joinDate).getFullYear()}
+                    {new Date(currentMember.join_date || currentMember.created_at || '').getFullYear()}
                   </p>
                 </div>
                 <Calendar className="w-8 h-8 text-blue-500" />
@@ -359,7 +499,7 @@ export default function MemberDashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">Organization</p>
-                  <p className="text-lg font-bold text-gray-900">{currentMember.organizationName}</p>
+                  <p className="text-lg font-bold text-gray-900">{currentMember.organization_name}</p>
                 </div>
                 <Building className="w-8 h-8 text-purple-500" />
               </div>
@@ -382,16 +522,23 @@ export default function MemberDashboard() {
                 <div className="flex justify-between items-center">
                   <div>
                     <CardTitle>Personal Information</CardTitle>
-                    <CardDescription>View and update your personal details</CardDescription>
+                    <CardDescription>Your details as provided during registration</CardDescription>
                   </div>
                   <div className="flex gap-2">
                     {isEditing ? (
                       <>
-                        <Button variant="outline" onClick={() => setIsEditing(false)}>
+                        <Button variant="outline" onClick={() => setIsEditing(false)} disabled={loading}>
                           Cancel
                         </Button>
-                        <Button onClick={handleProfileUpdate}>
-                          Save Changes
+                        <Button onClick={handleProfileUpdate} disabled={loading}>
+                          {loading ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Saving...
+                            </>
+                          ) : (
+                            "Save Changes"
+                          )}
                         </Button>
                       </>
                     ) : (
@@ -405,15 +552,15 @@ export default function MemberDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-6">
-                  {/* Basic Information (Read-only) */}
+                  {/* Basic Information (Read-only from registration) */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <Label className="text-sm font-medium text-gray-600">First Name</Label>
-                      <p className="mt-1 text-sm text-gray-900">{currentMember.firstName}</p>
+                      <p className="mt-1 text-sm text-gray-900 font-medium">{currentMember.first_name}</p>
                     </div>
                     <div>
                       <Label className="text-sm font-medium text-gray-600">Last Name</Label>
-                      <p className="mt-1 text-sm text-gray-900">{currentMember.lastName}</p>
+                      <p className="mt-1 text-sm text-gray-900 font-medium">{currentMember.last_name}</p>
                     </div>
                   </div>
 
@@ -427,7 +574,9 @@ export default function MemberDashboard() {
                     </div>
                     <div>
                       <Label className="text-sm font-medium text-gray-600">Membership ID</Label>
-                      <p className="mt-1 text-sm text-gray-900 font-mono">{currentMember.membershipId}</p>
+                      <p className="mt-1 text-sm text-gray-900 font-mono bg-gray-50 px-2 py-1 rounded">
+                        {currentMember.membership_id}
+                      </p>
                     </div>
                   </div>
 
@@ -441,6 +590,7 @@ export default function MemberDashboard() {
                           value={profileForm.phone}
                           onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
                           placeholder="+1-555-123-4567"
+                          className="mt-1"
                         />
                       ) : (
                         <div className="flex items-center gap-2 mt-1">
@@ -457,6 +607,7 @@ export default function MemberDashboard() {
                           value={profileForm.designation}
                           onChange={(e) => setProfileForm({ ...profileForm, designation: e.target.value })}
                           placeholder="Your job title"
+                          className="mt-1"
                         />
                       ) : (
                         <div className="flex items-center gap-2 mt-1">
@@ -476,6 +627,7 @@ export default function MemberDashboard() {
                         onChange={(e) => setProfileForm({ ...profileForm, address: e.target.value })}
                         placeholder="Your full address"
                         rows={3}
+                        className="mt-1"
                       />
                     ) : (
                       <div className="flex items-start gap-2 mt-1">
@@ -483,6 +635,47 @@ export default function MemberDashboard() {
                         <p className="text-sm text-gray-900">{currentMember.address || 'Not provided'}</p>
                       </div>
                     )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <Label htmlFor="experience">Years of Experience</Label>
+                      {isEditing ? (
+                        <Select
+                          value={profileForm.experience}
+                          onValueChange={(value) => setProfileForm({ ...profileForm, experience: value })}
+                        >
+                          <SelectTrigger className="mt-1">
+                            <SelectValue placeholder="Select experience level" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="0-2">0-2 years</SelectItem>
+                            <SelectItem value="3-5">3-5 years</SelectItem>
+                            <SelectItem value="6-10">6-10 years</SelectItem>
+                            <SelectItem value="11-15">11-15 years</SelectItem>
+                            <SelectItem value="16-20">16-20 years</SelectItem>
+                            <SelectItem value="20+">20+ years</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <div className="flex items-center gap-2 mt-1">
+                          <Award className="w-4 h-4 text-gray-400" />
+                          <p className="text-sm text-gray-900">
+                            {currentMember.experience ? getExperienceDisplay(currentMember.experience) : 'Not provided'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium text-gray-600">Payment Method</Label>
+                      <div className="flex items-center gap-2 mt-1">
+                        <CreditCard className="w-4 h-4 text-gray-400" />
+                        <p className="text-sm text-gray-900">
+                          {currentMember.payment_method ? getPaymentMethodDisplay(currentMember.payment_method) : 'Not specified'}
+                        </p>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">Contact admin to change payment method</p>
+                    </div>
                   </div>
 
                   <div>
@@ -494,9 +687,14 @@ export default function MemberDashboard() {
                         onChange={(e) => setProfileForm({ ...profileForm, achievements: e.target.value })}
                         placeholder="Your achievements, certifications, etc."
                         rows={4}
+                        className="mt-1"
                       />
                     ) : (
-                      <p className="text-sm text-gray-900 mt-1">{currentMember.achievements || 'Not provided'}</p>
+                      <div className="mt-1">
+                        <p className="text-sm text-gray-900">
+                          {currentMember.achievements || 'Not provided'}
+                        </p>
+                      </div>
                     )}
                   </div>
 
@@ -576,8 +774,15 @@ export default function MemberDashboard() {
                             <Button variant="outline" onClick={() => setShowPasswordDialog(false)}>
                               Cancel
                             </Button>
-                            <Button onClick={handlePasswordChange}>
-                              Change Password
+                            <Button onClick={handlePasswordChange} disabled={loading}>
+                              {loading ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  Changing...
+                                </>
+                              ) : (
+                                "Change Password"
+                              )}
                             </Button>
                           </DialogFooter>
                         </DialogContent>
@@ -601,38 +806,55 @@ export default function MemberDashboard() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <Label className="text-sm font-medium text-gray-600">Membership ID</Label>
-                      <p className="mt-1 text-lg font-mono">{currentMember.membershipId}</p>
+                      <p className="mt-1 text-lg font-mono bg-blue-50 px-3 py-2 rounded border">
+                        {currentMember.membership_id}
+                      </p>
                     </div>
                     <div>
                       <Label className="text-sm font-medium text-gray-600">Status</Label>
-                      <div className="mt-1">{getStatusBadge(currentMember.status)}</div>
+                      <div className="mt-2">{getStatusBadge(currentMember.status)}</div>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <Label className="text-sm font-medium text-gray-600">Organization</Label>
-                      <p className="mt-1">{currentMember.organizationName}</p>
+                      <p className="mt-1 font-medium">{currentMember.organization_name}</p>
                     </div>
                     <div>
                       <Label className="text-sm font-medium text-gray-600">Join Date</Label>
-                      <p className="mt-1">{new Date(currentMember.joinDate).toLocaleDateString()}</p>
+                      <p className="mt-1">
+                        {new Date(currentMember.join_date || currentMember.created_at || '').toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })}
+                      </p>
                     </div>
                   </div>
 
                   {currentMember.experience && (
                     <div>
                       <Label className="text-sm font-medium text-gray-600">Experience Level</Label>
-                      <p className="mt-1">{currentMember.experience}</p>
+                      <p className="mt-1">{getExperienceDisplay(currentMember.experience)}</p>
                     </div>
                   )}
 
-                  {currentMember.paymentMethod && (
+                  {currentMember.payment_method && (
                     <div>
                       <Label className="text-sm font-medium text-gray-600">Payment Method</Label>
                       <div className="flex items-center gap-2 mt-1">
                         <CreditCard className="w-4 h-4 text-gray-400" />
-                        <p className="capitalize">{currentMember.paymentMethod.replace('_', ' ')}</p>
+                        <p>{getPaymentMethodDisplay(currentMember.payment_method)}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {currentMember.achievements && (
+                    <div>
+                      <Label className="text-sm font-medium text-gray-600">Achievements & Qualifications</Label>
+                      <div className="mt-1 p-3 bg-gray-50 rounded border">
+                        <p className="text-sm text-gray-900">{currentMember.achievements}</p>
                       </div>
                     </div>
                   )}
