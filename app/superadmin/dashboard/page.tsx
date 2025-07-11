@@ -572,7 +572,7 @@ export default function SuperadminDashboard() {
                             {getStatusBadge(request.status)}
                           </div>
                           <div className="text-sm text-gray-600 space-y-1">
-                            <p><strong>Username:</strong> {request.username}</p>
+                            <p><strong>Username:</strong> {request.username || 'Not specified'}</p>
                             <p><strong>Email:</strong> {request.email}</p>
                             {request.phone && <p><strong>Phone:</strong> {request.phone}</p>}
                             <p><strong>Role:</strong> {request.role}</p>
@@ -849,7 +849,7 @@ export default function SuperadminDashboard() {
                             )}
                           </div>
                           <div className="text-sm text-gray-600 space-y-1">
-                            <p><strong>Username:</strong> {admin.username}</p>
+                            <p><strong>Username:</strong> {admin.username || 'Not specified'}</p>
                             <p><strong>Email:</strong> {admin.email}</p>
                             <p><strong>Role:</strong> {admin.role}</p>
                             {admin.organization_name && <p><strong>Organization:</strong> {admin.organization_name}</p>}

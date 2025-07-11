@@ -252,13 +252,15 @@ export default function AdminRegisterPage() {
     setIsLoading(true)
     setError("")
 
+    console.log('🔑 Frontend: Submitting admin registration with username:', adminData.username);
+
     try {
       const response = await fetch("/api/auth/admin/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          step: "complete-registration", // ✅ FIXED: Added missing step
-          username: adminData.username,
+          step: "complete-registration",
+          username: adminData.username, // ✅ ENSURE: Username is sent
           email: adminData.email,
           phone: adminData.phone,
           firstName: adminData.name.split(" ")[0],
@@ -268,9 +270,9 @@ export default function AdminRegisterPage() {
           organization: adminData.organizationId,
           experience: adminData.experience,
           appointer: adminData.appointerName,
-          verificationType: verificationMethod, // ✅ FIXED: Added verificationType
-          verifiedContact: verificationMethod === "email" ? adminData.email : adminData.phone, // ✅ FIXED: Added verifiedContact
-          hasOTP: true, // ✅ FIXED: Added hasOTP flag
+          verificationType: verificationMethod,
+          verifiedContact: verificationMethod === "email" ? adminData.email : adminData.phone,
+          hasOTP: true,
         }),
       })
 
@@ -279,11 +281,14 @@ export default function AdminRegisterPage() {
       if (response.ok) {
         setRegistrationComplete(true)
         setSuccess("Admin registration submitted successfully! Your application is pending approval from the Superadmin.")
+        console.log('✅ Frontend: Registration successful with username:', data.data?.username);
       } else {
         setError(data.error || "Registration failed. Please try again.")
+        console.error('❌ Frontend: Registration failed:', data.error);
       }
     } catch (error) {
       setError("Registration failed. Please check your connection and try again.")
+      console.error('❌ Frontend: Network error:', error);
     }
 
     setIsLoading(false)
@@ -318,6 +323,7 @@ export default function AdminRegisterPage() {
               <div className="space-y-2 text-sm text-gray-600 mb-6">
                 <p><strong>Application ID:</strong> ADM-{Date.now()}</p>
                 <p><strong>Organization:</strong> {organizations.find(org => org.id.toString() === adminData.organizationId)?.name}</p>
+                <p><strong>Username:</strong> {adminData.username}</p>
                 <p><strong>Status:</strong> <Badge className="bg-yellow-100 text-yellow-800">Pending Approval</Badge></p>
               </div>
               <div className="flex justify-center space-x-4">

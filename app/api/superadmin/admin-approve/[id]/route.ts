@@ -1,4 +1,4 @@
-// app/api/superadmin/admin-approve/[id]/route.ts - FIXED VERSION WITH COMMENTS
+// app/api/superadmin/admin-approve/[id]/route.ts - FIXED FOR MISSING COLUMNS
 import { NextRequest, NextResponse } from 'next/server'
 import { Pool } from '@neondatabase/serverless'
 import bcrypt from 'bcryptjs'
@@ -27,60 +27,107 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const client = await pool.connect()
     
     try {
-      // 🔍 CHANGE 1: Modified query to include username and password_hash from admin_requests
-      // OLD QUERY: Only selected basic fields
-      // NEW QUERY: Include username and password_hash columns
-      const requestResult = await client.query(`
-        SELECT 
-          ar.*,
-          o.name as organization_name
-        FROM admin_requests ar
-        LEFT JOIN organizations o ON ar.organization::integer = o.id
-        WHERE ar.id = $1 AND ar.status = 'pending'
-      `, [adminRequestId])
+      // ✅ ENHANCED: Get admin request with column-safe query
+      let adminRequest = null
       
-      if (requestResult.rows.length === 0) {
+      // Strategy 1: Try with all columns
+      try {
+        const fullResult = await client.query(`
+          SELECT 
+            ar.*,
+            o.name as organization_name
+          FROM admin_requests ar
+          LEFT JOIN organizations o ON ar.organization::integer = o.id
+          WHERE ar.id = $1 AND ar.status = 'pending'
+        `, [adminRequestId])
+        
+        if (fullResult.rows.length > 0) {
+          adminRequest = fullResult.rows[0]
+          console.log('✅ Got admin request with full data')
+        }
+        
+      } catch (fullError) {
+        console.log('⚠️ Full query failed, trying basic query')
+        
+        // Strategy 2: Basic query without joins
+        const basicResult = await client.query(`
+          SELECT * FROM admin_requests 
+          WHERE id = $1 AND status = 'pending'
+        `, [adminRequestId])
+        
+        if (basicResult.rows.length > 0) {
+          adminRequest = basicResult.rows[0]
+          adminRequest.organization_name = adminRequest.organization || 'Unknown'
+          console.log('✅ Got admin request with basic data')
+        }
+      }
+      
+      if (!adminRequest) {
         return NextResponse.json({ 
           error: 'Admin request not found or already processed' 
         }, { status: 404 })
       }
       
-      const adminRequest = requestResult.rows[0]
-      console.log('📋 Found admin request:', adminRequest.email)
+      console.log('📋 Processing admin request:', {
+        email: adminRequest.email,
+        first_name: adminRequest.first_name,
+        last_name: adminRequest.last_name,
+        hasUsername: !!(adminRequest.username),
+        hasPasswordHash: !!(adminRequest.password_hash)
+      })
       
-      // 🚨 CHANGE 2: COMPLETELY REPLACED CREDENTIAL GENERATION LOGIC
-      // ❌ OLD CODE (WRONG - IGNORES USER'S CHOICE):
-      // const username = adminRequest.email.split('@')[0]  // "azad818n.s"
-      // const tempPassword = 'TempPass123!'                // Hardcoded
-      // const hashedPassword = await bcrypt.hash(tempPassword, 12)
-      
-      // ✅ NEW CODE (CORRECT - USES USER'S ORIGINAL CHOICE):
+      // ✅ SMART CREDENTIAL LOGIC
       let username, hashedPassword, originalPassword = null
       
-      if (adminRequest.username && adminRequest.password_hash) {
-        // Case 1: Original credentials exist in admin_requests (PREFERRED)
-        username = adminRequest.username           // "nawab1996" (user's choice)
-        hashedPassword = adminRequest.password_hash // Hash of "123Azad@" (user's choice)
-        console.log('✅ Using ORIGINAL credentials from registration:', { username })
+      // Check if we have original credentials
+      if (adminRequest.username && adminRequest.username.trim() !== '' && 
+          adminRequest.username !== adminRequest.email?.split('@')[0]) {
+        
+        // Case 1: We have a proper username (not email-based)
+        username = adminRequest.username
+        
+        if (adminRequest.password_hash && adminRequest.password_hash.trim() !== '') {
+          // We have the original password hash
+          hashedPassword = adminRequest.password_hash
+          console.log('✅ Using ORIGINAL credentials:', { username })
+        } else {
+          // We have username but no password hash - create new temporary password
+          originalPassword = 'ChangeMe123!'
+          hashedPassword = await bcrypt.hash(originalPassword, 12)
+          console.log('✅ Using original USERNAME with new password:', { username })
+        }
+        
+      } else if (adminRequest.first_name && adminRequest.last_name) {
+        
+        // Case 2: Generate username from name (BETTER than email)
+        username = `${adminRequest.first_name.toLowerCase()} ${adminRequest.last_name.toLowerCase()}`
+        originalPassword = 'ChangeMe123!'
+        hashedPassword = await bcrypt.hash(originalPassword, 12)
+        console.log('✅ Generated username from NAME:', { username })
+        
+      } else if (adminRequest.first_name) {
+        
+        // Case 3: Use first name only
+        username = adminRequest.first_name.toLowerCase()
+        originalPassword = 'ChangeMe123!'
+        hashedPassword = await bcrypt.hash(originalPassword, 12)
+        console.log('✅ Generated username from FIRST NAME:', { username })
         
       } else {
-        // Case 2: Fallback if admin_requests doesn't have username/password columns yet
-        console.log('⚠️ FALLBACK: Original credentials not found, using temporary ones')
-        console.log('💡 RECOMMENDATION: Update admin_requests table to store username and password_hash')
         
-        username = adminRequest.email.split('@')[0]
-        originalPassword = 'TempPass123!'
+        // Case 4: Last resort - email based (but better formatted)
+        const emailUsername = adminRequest.email.split('@')[0]
+        username = emailUsername + '_admin'
+        originalPassword = 'ChangeMe123!'
         hashedPassword = await bcrypt.hash(originalPassword, 12)
-        
-        console.log('🔐 Generated TEMPORARY credentials (should be avoided):', { username, originalPassword })
+        console.log('⚠️ FALLBACK: Using email-based username:', { username })
       }
       
-      // 📊 CHANGE 3: Enhanced logging to show which credentials are being used
       console.log('🔐 Final credentials for admin creation:', { 
         username, 
         email: adminRequest.email,
-        usingOriginalCredentials: !!(adminRequest.username && adminRequest.password_hash),
-        credentialsSource: adminRequest.username ? 'admin_requests_table' : 'generated_fallback'
+        hasOriginalPassword: !originalPassword,
+        credentialsSource: adminRequest.username ? 'original' : 'generated'
       })
       
       // Begin transaction
@@ -100,24 +147,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         
         console.log('✅ Admin request status updated to approved')
         
-        // 2. Check table structure first
-        const tableInfo = await client.query(`
-          SELECT column_name, data_type, is_nullable, column_default
-          FROM information_schema.columns 
-          WHERE table_name = 'admins'
-          ORDER BY ordinal_position
-        `)
-        
-        console.log('📊 Admins table structure:', tableInfo.rows)
-        
-        // 3. Try to create admin with minimal required fields first
+        // 2. Create admin record
         let adminCreated = false
         let newAdmin = null
         
-        // 🔧 CHANGE 4: Updated admin creation to use original credentials
-        // Strategy 1: Try with all standard fields
+        // Try to create admin with various strategies
         try {
-          console.log('🔄 Strategy 1: Creating admin with standard fields...')
+          console.log('🔄 Creating admin with optimized strategy...')
           
           const createResult = await client.query(`
             INSERT INTO admins (
@@ -136,9 +172,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             )
             RETURNING id, username, email, first_name, last_name, status
           `, [
-            username,                    // ✅ CHANGED: Now uses original username ("nawab1996")
+            username,
             adminRequest.email,
-            hashedPassword,              // ✅ CHANGED: Now uses original password hash
+            hashedPassword,
             adminRequest.first_name || 'Admin',
             adminRequest.last_name || 'User',
             'admin',
@@ -149,106 +185,35 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           
           newAdmin = createResult.rows[0]
           adminCreated = true
-          console.log('✅ Strategy 1 SUCCESS: Admin created with credentials:', { 
+          console.log('✅ Admin created successfully:', { 
             id: newAdmin.id, 
-            username: newAdmin.username 
+            username: newAdmin.username,
+            email: newAdmin.email
           })
           
-        } catch (error1) {
-          console.log('❌ Strategy 1 failed:', error1 instanceof Error ? error1.message : error1)
+        } catch (createError) {
+          console.error('❌ Admin creation failed:', createError instanceof Error ? createError.message : createError)
           
-          // Strategy 2: Try with different status values
-          const statusesToTry = ['active', 'enabled', 'pending']
-          
-          for (const statusValue of statusesToTry) {
-            try {
-              console.log(`🔄 Strategy 2: Trying with status '${statusValue}'...`)
-              
-              const createResult = await client.query(`
-                INSERT INTO admins (
-                  username, email, password_hash, first_name, last_name, 
-                  role, organization_id, status, is_active, created_at
-                ) VALUES (
-                  $1, $2, $3, $4, $5, $6, $7, $8, $9, NOW()
-                )
-                RETURNING id, username, email, first_name, last_name, status
-              `, [
-                username,                // ✅ CHANGED: Original username
-                adminRequest.email, 
-                hashedPassword,          // ✅ CHANGED: Original password hash
-                adminRequest.first_name || 'Admin', 
-                adminRequest.last_name || 'User',
-                'admin', 1, statusValue, true
-              ])
-              
-              newAdmin = createResult.rows[0]
-              adminCreated = true
-              console.log(`✅ Strategy 2 SUCCESS: Admin created with status '${statusValue}'`)
-              break
-              
-            } catch (error2) {
-              console.log(
-                `❌ Strategy 2 failed for status '${statusValue}':`,
-                error2 instanceof Error ? error2.message : error2
-              )
-              continue
+          // Try with minimal fields
+          try {
+            console.log('🔄 Trying with minimal fields...')
+            
+            const minimalResult = await client.query(`
+              INSERT INTO admins (username, email, password_hash, role, status)
+              VALUES ($1, $2, $3, $4, $5)
+              RETURNING id, username, email, role, status
+            `, [username, adminRequest.email, hashedPassword, 'admin', 'approved'])
+            
+            newAdmin = minimalResult.rows[0]
+            adminCreated = true
+            console.log('✅ Admin created with minimal fields')
+            
+          } catch (minimalError) {
+            if (minimalError instanceof Error) {
+              console.error('❌ Minimal admin creation also failed:', minimalError.message)
+            } else {
+              console.error('❌ Minimal admin creation also failed:', minimalError)
             }
-          }
-        }
-        
-        // Strategy 3: Try with minimal fields if previous attempts failed
-        if (!adminCreated) {
-          try {
-            console.log('🔄 Strategy 3: Trying with minimal fields...')
-            
-            const createResult = await client.query(`
-              INSERT INTO admins (username, email, password_hash, role)
-              VALUES ($1, $2, $3, $4)
-              RETURNING id, username, email, role
-            `, [
-              username,              // ✅ CHANGED: Original username
-              adminRequest.email, 
-              hashedPassword,        // ✅ CHANGED: Original password hash
-              'admin'
-            ])
-            
-            newAdmin = createResult.rows[0]
-            adminCreated = true
-            console.log('✅ Strategy 3 SUCCESS: Admin created with minimal fields')
-            
-          } catch (error3) {
-            console.log('❌ Strategy 3 failed:', error3 instanceof Error ? error3.message : error3)
-          }
-        }
-        
-        // Strategy 4: Try inserting into admin_users table as fallback
-        if (!adminCreated) {
-          try {
-            console.log('🔄 Strategy 4: Trying admin_users table as fallback...')
-            
-            const createResult = await client.query(`
-              INSERT INTO admin_users (
-                username, email, password_hash, first_name, last_name, 
-                role, organization_id, is_active
-              ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8
-              )
-              RETURNING id, username, email, first_name, last_name, role
-            `, [
-              username,              // ✅ CHANGED: Original username
-              adminRequest.email, 
-              hashedPassword,        // ✅ CHANGED: Original password hash
-              adminRequest.first_name || 'Admin', 
-              adminRequest.last_name || 'User',
-              'admin', 1, true
-            ])
-            
-            newAdmin = createResult.rows[0]
-            adminCreated = true
-            console.log('✅ Strategy 4 SUCCESS: Admin created in admin_users table')
-            
-          } catch (error4) {
-            console.log('❌ Strategy 4 failed:', error4 instanceof Error ? error4.message : error4)
           }
         }
         
@@ -256,14 +221,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           // Commit transaction
           await client.query('COMMIT')
           
-          // 📝 CHANGE 5: Updated response to show correct credentials
-          const responseCredentials = adminRequest.username && adminRequest.password_hash ? {
-            username: username,
-            note: 'Use your original password from registration',
-            loginUrl: '/admin/login'
-          } : {
+          const responseCredentials = originalPassword ? {
             username: username,
             tempPassword: originalPassword,
+            loginUrl: '/admin/login',
+            note: 'Please change password after first login'
+          } : {
+            username: username,
+            note: 'Use your original password from registration',
             loginUrl: '/admin/login'
           }
           
@@ -274,21 +239,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               first_name: adminRequest.first_name,
               last_name: adminRequest.last_name,
               email: adminRequest.email,
-              username: username,        // ✅ CHANGED: Shows original username
+              username: username,
               organization_name: adminRequest.organization_name,
               status: 'approved',
               login_created: true,
-              admin_user_id: newAdmin.id,
-              using_original_credentials: !!(adminRequest.username && adminRequest.password_hash)
+              admin_user_id: newAdmin.id
             },
             loginCredentials: responseCredentials,
-            message: adminRequest.username ? 
-              `✅ Admin approved! Login with your original credentials - Username: ${username}` :
-              `✅ Admin approved! Login with Username: ${username}, Password: ${originalPassword}`
+            message: originalPassword ? 
+              `✅ Admin approved! Login: Username="${username}", Password="${originalPassword}"` :
+              `✅ Admin approved! Login with Username="${username}" and your original password`
           })
           
         } else {
-          // If all strategies failed, still commit the admin_requests update
+          // If admin creation failed, still commit the approval
           await client.query('COMMIT')
           
           return NextResponse.json({ 
@@ -302,14 +266,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               status: 'approved',
               login_created: false
             },
-            error: 'Admin request approved but login credentials could not be created due to database constraints',
-            message: '⚠️ Admin request approved but login access not created. Manual intervention required.',
-            debugInfo: {
-              username: username,
-              originalPassword: originalPassword,
-              tableStructure: tableInfo.rows,
-              hadOriginalCredentials: !!(adminRequest.username && adminRequest.password_hash)
-            }
+            error: 'Admin request approved but login credentials could not be created',
+            message: '⚠️ Admin request approved but login access needs manual setup'
           })
         }
         
@@ -329,34 +287,3 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }, { status: 500 })
   }
 }
-
-/*
-📋 SUMMARY OF CHANGES MADE:
-
-🚨 MAIN PROBLEM FIXED:
-- OLD: Generated username from email ("azad818n.s") + hardcoded password ("TempPass123!")
-- NEW: Uses original username ("nawab1996") + original password hash from registration
-
-🔧 SPECIFIC CHANGES:
-
-1. CHANGE 1 (Line ~40): Query now fetches username and password_hash from admin_requests
-2. CHANGE 2 (Line ~60-80): Replaced credential generation with original credential lookup
-3. CHANGE 3 (Line ~85): Enhanced logging to show credential source
-4. CHANGE 4 (Line ~120+): All admin creation strategies now use original credentials
-5. CHANGE 5 (Line ~220): Response shows correct login credentials
-
-✅ RESULT:
-- Admin can now login with their chosen username: "nawab1996"
-- Admin can now login with their chosen password: "123Azad@"
-- No more generated credentials like "azad818n.s" + "TempPass123!"
-
-⚠️ REQUIREMENT:
-Your admin_requests table needs these columns:
-- username VARCHAR(255)
-- password_hash VARCHAR(255)
-
-Run this SQL if needed:
-ALTER TABLE admin_requests 
-ADD COLUMN username VARCHAR(255),
-ADD COLUMN password_hash VARCHAR(255);
-*/

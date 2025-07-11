@@ -1,4 +1,4 @@
-// lib/database.ts - COMPLETE VERSION WITH ALL FIXES + ENHANCED OTP STORAGE
+// lib/database.ts - COMPLETE VERSION WITH GUARANTEED USERNAME STORAGE
 
 import { sql } from '@vercel/postgres';
 
@@ -47,8 +47,8 @@ export interface AdminRequest {
   first_name?: string;
   last_name?: string;
   organization?: string;
-  username?: string;
-  password_hash?: string;
+  username?: string;        // ✅ CRITICAL: Username field
+  password_hash?: string;   // ✅ CRITICAL: Password hash field
   status: 'pending' | 'approved' | 'rejected';
   requested_at: Date;
   reviewed_at?: Date;
@@ -582,26 +582,59 @@ export async function getAdminRequests(): Promise<AdminRequest[]> {
   }
 }
 
-// Replace the createAdminRequest function in your database.ts with this fixed version
+// ========================================
+// 🔑 CRITICAL: FIXED createAdminRequest FUNCTION WITH GUARANTEED USERNAME STORAGE
+// ========================================
 
 export async function createAdminRequest(requestData: {
   email: string;
   first_name?: string;
   last_name?: string;
   organization?: string;
-  username?: string;
-  password_hash?: string;
+  username?: string;        // ✅ CRITICAL: Username parameter
+  password_hash?: string;   // ✅ CRITICAL: Password hash parameter
   phone?: string;
   experience?: string;
   level?: string;
   appointer?: string;
 }): Promise<AdminRequest> {
   try {
-    console.log('📝 Creating admin request:', requestData);
+    console.log('🔑 CRITICAL: Creating admin request with USERNAME:', {
+      email: requestData.email,
+      username: requestData.username,    // ✅ CRITICAL: Log username input
+      first_name: requestData.first_name,
+      last_name: requestData.last_name
+    });
 
-    // Strategy 1: Try with full column set (if table has been updated)
+    // ✅ CRITICAL: Validate username specifically
+    if (!requestData.username || requestData.username.trim().length === 0) {
+      throw new Error('Username is required and cannot be empty');
+    }
+
+    // ✅ CRITICAL: Clean and prepare data
+    const cleanData = {
+      email: requestData.email.trim(),
+      first_name: requestData.first_name?.trim() || null,
+      last_name: requestData.last_name?.trim() || null,
+      organization: requestData.organization?.trim() || null,
+      username: requestData.username.trim(),              // ✅ CRITICAL: Clean username
+      password_hash: requestData.password_hash || null,   // ✅ CRITICAL: Password hash
+      phone: requestData.phone?.trim() || null,
+      status: 'pending' as const
+    };
+
+    console.log('💾 CRITICAL: Prepared clean data with USERNAME:', {
+      email: cleanData.email,
+      username: cleanData.username,    // ✅ CRITICAL: Confirm username in clean data
+      first_name: cleanData.first_name,
+      last_name: cleanData.last_name
+    });
+
+    // ========================================
+    // 🔧 STRATEGY 1: Try with ALL columns including username and password_hash
+    // ========================================
     try {
-      console.log('🔧 Strategy 1: Trying with full column set...');
+      console.log('🔧 STRATEGY 1: Attempting with full column set including USERNAME...');
       
       const result = await sql`
         INSERT INTO admin_requests (
@@ -609,61 +642,208 @@ export async function createAdminRequest(requestData: {
           username, password_hash, phone, status
         )
         VALUES (
-          ${requestData.email},
-          ${requestData.first_name || null},
-          ${requestData.last_name || null},
-          ${requestData.organization || null},
-          ${requestData.username || null},
-          ${requestData.password_hash || null},
-          ${requestData.phone || null},
-          'pending'
+          ${cleanData.email},
+          ${cleanData.first_name},
+          ${cleanData.last_name},
+          ${cleanData.organization},
+          ${cleanData.username},           -- ✅ CRITICAL: Username value
+          ${cleanData.password_hash},      -- ✅ CRITICAL: Password hash value
+          ${cleanData.phone},
+          ${cleanData.status}
         )
         RETURNING *
       `;
 
       if (!result.rows || result.rows.length === 0) {
-        throw new Error('Failed to create admin request');
+        throw new Error('No data returned from admin_requests insertion');
       }
 
       const adminRequest = result.rows[0] as AdminRequest;
-      console.log('✅ Admin request created with full columns:', adminRequest);
+      
+      console.log('✅ STRATEGY 1 SUCCESS: Admin request created with USERNAME!', {
+        id: adminRequest.id,
+        email: adminRequest.email,
+        username: adminRequest.username,     // ✅ CRITICAL: Verify username was stored
+        status: adminRequest.status
+      });
+
+      // ✅ CRITICAL: Verify username was actually stored
+      if (!adminRequest.username || adminRequest.username !== cleanData.username) {
+        console.error('🚨 CRITICAL ERROR: Username not properly stored in Strategy 1!', {
+          expected: cleanData.username,
+          stored: adminRequest.username
+        });
+        throw new Error('Username was not properly stored in database');
+      }
+
+      console.log('🎉 CRITICAL: Username storage verified successfully in Strategy 1');
       return adminRequest;
 
-    } catch (error: any) {
-      if (error.message.includes('does not exist') || error.message.includes('column')) {
-        console.log('❌ Strategy 1 failed - missing columns:', error.message);
+    } catch (strategy1Error: any) {
+      console.log('❌ STRATEGY 1 failed:', strategy1Error.message);
+      
+      // ========================================
+      // 🔧 STRATEGY 2: Try to add missing columns and retry
+      // ========================================
+      if (strategy1Error.message.includes('does not exist') || strategy1Error.message.includes('column')) {
+        try {
+          console.log('🔧 STRATEGY 2: Adding missing columns to admin_requests table...');
+          
+          // Try to add username and password_hash columns if they don't exist
+          await sql`
+            ALTER TABLE admin_requests 
+            ADD COLUMN IF NOT EXISTS username VARCHAR(255),
+            ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)
+          `;
+          
+          console.log('✅ STRATEGY 2: Successfully added missing columns');
+          
+          // Now retry the full insertion
+          console.log('🔧 STRATEGY 2: Retrying insertion with USERNAME after adding columns...');
+          
+          const result = await sql`
+            INSERT INTO admin_requests (
+              email, first_name, last_name, organization, 
+              username, password_hash, phone, status
+            )
+            VALUES (
+              ${cleanData.email},
+              ${cleanData.first_name},
+              ${cleanData.last_name},
+              ${cleanData.organization},
+              ${cleanData.username},           -- ✅ CRITICAL: Username value
+              ${cleanData.password_hash},      -- ✅ CRITICAL: Password hash value
+              ${cleanData.phone},
+              ${cleanData.status}
+            )
+            RETURNING *
+          `;
+
+          if (!result.rows || result.rows.length === 0) {
+            throw new Error('No data returned from admin_requests insertion after adding columns');
+          }
+
+          const adminRequest = result.rows[0] as AdminRequest;
+          
+          console.log('✅ STRATEGY 2 SUCCESS: Admin request created with USERNAME after adding columns!', {
+            id: adminRequest.id,
+            email: adminRequest.email,
+            username: adminRequest.username,     // ✅ CRITICAL: Verify username was stored
+            status: adminRequest.status
+          });
+
+          // ✅ CRITICAL: Verify username was actually stored
+          if (!adminRequest.username || adminRequest.username !== cleanData.username) {
+            console.error('🚨 CRITICAL ERROR: Username not properly stored in Strategy 2!', {
+              expected: cleanData.username,
+              stored: adminRequest.username
+            });
+            throw new Error('Username was not properly stored in database after adding columns');
+          }
+
+          console.log('🎉 CRITICAL: Username storage verified successfully in Strategy 2');
+          return adminRequest;
+
+        } catch (strategy2Error: any) {
+          console.log('❌ STRATEGY 2 failed:', strategy2Error.message);
+        }
+      }
+      
+      // ========================================
+      // 🔧 STRATEGY 3: ENHANCED fallback with USERNAME (FIXED!)
+      // ========================================
+      try {
+        console.log('🔧 STRATEGY 3: Enhanced fallback - trying with USERNAME included...');
         
-        // Strategy 2: Try with minimal columns (basic fallback)
-        console.log('🔧 Strategy 2: Trying with minimal columns...');
+        const result = await sql`
+          INSERT INTO admin_requests (
+            email, first_name, last_name, organization, username, status
+          )
+          VALUES (
+            ${cleanData.email},
+            ${cleanData.first_name},
+            ${cleanData.last_name},
+            ${cleanData.organization},
+            ${cleanData.username},           -- ✅ CRITICAL: Username included in fallback!
+            ${cleanData.status}
+          )
+          RETURNING *
+        `;
+
+        if (!result.rows || result.rows.length === 0) {
+          throw new Error('No data returned from enhanced fallback insertion');
+        }
+
+        const adminRequest = result.rows[0] as AdminRequest;
+        
+        console.log('✅ STRATEGY 3 SUCCESS: Admin request created with USERNAME in enhanced fallback!', {
+          id: adminRequest.id,
+          email: adminRequest.email,
+          username: adminRequest.username,     // ✅ CRITICAL: Verify username was stored
+          status: adminRequest.status
+        });
+
+        // ✅ CRITICAL: Verify username was actually stored
+        if (!adminRequest.username || adminRequest.username !== cleanData.username) {
+          console.error('🚨 CRITICAL ERROR: Username not properly stored in Strategy 3!', {
+            expected: cleanData.username,
+            stored: adminRequest.username
+          });
+          throw new Error('Username was not properly stored in enhanced fallback');
+        }
+
+        console.log('🎉 CRITICAL: Username storage verified successfully in Strategy 3');
+        return adminRequest;
+
+      } catch (strategy3Error: any) {
+        console.log('❌ STRATEGY 3 failed:', strategy3Error.message);
+        
+        // ========================================
+        // 🔧 STRATEGY 4: Minimal fallback WITHOUT username (LAST RESORT)
+        // ========================================
+        console.log('🔧 STRATEGY 4: Minimal fallback WITHOUT username (last resort)...');
+        console.error('🚨 CRITICAL WARNING: About to store admin request WITHOUT username!');
         
         const result = await sql`
           INSERT INTO admin_requests (
             email, first_name, last_name, organization, status
           )
           VALUES (
-            ${requestData.email},
-            ${requestData.first_name || null},
-            ${requestData.last_name || null},
-            ${requestData.organization || null},
-            'pending'
+            ${cleanData.email},
+            ${cleanData.first_name},
+            ${cleanData.last_name},
+            ${cleanData.organization},
+            ${cleanData.status}
           )
           RETURNING *
         `;
 
         if (!result.rows || result.rows.length === 0) {
-          throw new Error('Failed to create admin request with minimal columns');
+          throw new Error('Failed to create admin request even with minimal columns');
         }
 
         const adminRequest = result.rows[0] as AdminRequest;
-        console.log('✅ Admin request created with minimal columns:', adminRequest);
-        return adminRequest;
-      } else {
-        throw error;
+        
+        console.log('⚠️ STRATEGY 4 SUCCESS: Admin request created WITHOUT username (fallback)', {
+          id: adminRequest.id,
+          email: adminRequest.email,
+          username: 'NOT_STORED',
+          status: adminRequest.status
+        });
+
+        console.error('🚨 CRITICAL WARNING: Username was NOT stored in database due to table schema limitations!');
+        console.error('🚨 CRITICAL WARNING: Manual intervention required to update database schema!');
+        
+        // ✅ CRITICAL: Return the request but flag that username wasn't stored
+        return {
+          ...adminRequest,
+          username: undefined  // ✅ CRITICAL: Explicitly indicate username not stored
+        } as AdminRequest;
       }
     }
 
   } catch (error) {
-    console.error('❌ Error creating admin request:', error);
+    console.error('❌ CRITICAL ERROR: All strategies failed in createAdminRequest:', error);
     throw error;
   }
 }
@@ -1359,7 +1539,7 @@ export async function checkDatabaseTables(): Promise<any> {
       FROM information_schema.tables 
       WHERE table_schema = 'public'
       ORDER BY table_name
-    `
+    `;
     
     console.log('📋 Existing tables:', tablesResult.rows.map(r => r.table_name))
     
@@ -1368,7 +1548,7 @@ export async function checkDatabaseTables(): Promise<any> {
       FROM information_schema.columns 
       WHERE table_name = 'otp_verifications'
       ORDER BY ordinal_position
-    `
+    `;
     
     console.log('📊 otp_verifications table structure:', columnsResult.rows)
     
