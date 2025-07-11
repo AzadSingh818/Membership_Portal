@@ -1,0 +1,17 @@
+{
+    "sqltools.connections": [
+        {
+            "pgOptions": {
+                "ssl": {
+                    "rejectUnauthorized": true
+                }
+            },
+            "previewLimit": 50,
+            "server": "localhost",
+            "driver": "PostgreSQL",
+            "name": "membership",
+            "connectString": "postgresql://SuperAdmin_owner:npg_sBYLg86TXGUA@ep-young-bonus-a9hkne7o-pooler.gwc.azure.neon.tech/SuperAdmin?sslmode=require",
+            "connectionTimeout": 30
+        }
+    ]
+}
