@@ -8,9 +8,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Progress } from "@/components/ui/progress"
-import { 
-  Eye, EyeOff, User, Lock, ArrowLeft, Shield, CheckCircle, 
-  AlertCircle, Smartphone, Clock, UserPlus 
+import {
+  Eye, EyeOff, User, Lock, ArrowLeft, Shield, CheckCircle,
+  AlertCircle, Smartphone, Clock, UserPlus
 } from "lucide-react"
 import Link from "next/link"
 
@@ -59,22 +59,16 @@ export default function MemberLoginPage() {
           setMemberData(data.member)
           setMaskedPhone(data.maskedPhone)
           setSuccess(data.message)
-          
+
           // Auto-send OTP
           await sendOTP()
           setCurrentStep(2)
-        } else if (data.accessLevel === 'limited') {
-          // Pending member with limited access
-          setSuccess(data.message)
-          setTimeout(() => {
-            window.location.href = data.redirectUrl || '/member/pending-dashboard'
-          }, 2000)
         } else {
-          // Direct login success
+          // ✅ Always redirect to pending dashboard from blue page
           setSuccess(data.message)
           setTimeout(() => {
-            window.location.href = data.redirectUrl || '/member/dashboard'
-          }, 2000)
+            window.location.href = '/member/pending-dashboard'
+          }, 1500)
         }
       } else {
         setError(data.error || "Login failed. Please check your credentials.")
@@ -101,7 +95,7 @@ export default function MemberLoginPage() {
       if (response.ok) {
         setSuccess(data.message)
         setMaskedPhone(data.maskedPhone)
-        
+
         // Start 5-minute countdown
         setOtpTimer(300) // 5 minutes in seconds
         const countdown = setInterval(() => {
@@ -140,7 +134,7 @@ export default function MemberLoginPage() {
       if (response.ok) {
         setSuccess(data.message)
         setTimeout(() => {
-          window.location.href = data.redirectUrl || '/member/dashboard'
+          window.location.href = data.redirectUrl || '/member/pending-dashboard'
         }, 2000)
       } else {
         setError(data.error || "Invalid OTP. Please try again.")
@@ -180,8 +174,8 @@ export default function MemberLoginPage() {
             {currentStep === 1 ? "Member Login" : "Verify OTP"}
           </h1>
           <p className="text-blue-200">
-            {currentStep === 1 
-              ? "Access your member dashboard" 
+            {currentStep === 1
+              ? "Access your member dashboard"
               : "Enter the verification code sent to your phone"
             }
           </p>
@@ -213,7 +207,7 @@ export default function MemberLoginPage() {
               )}
             </CardTitle>
             <CardDescription>
-              {currentStep === 1 
+              {currentStep === 1
                 ? "Enter your membership ID and password to continue"
                 : `We've sent a 6-digit code to ${maskedPhone}`
               }
