@@ -390,7 +390,7 @@ export default function MemberLoginPage() {
 
         {/* Navigation Links */}
         <div className="text-center space-y-2">
-          <Link href="/member/register" className="text-blue-200 hover:text-white text-sm inline-flex items-center">
+          <Link href="http://localhost:3000/register" className="text-blue-200 hover:text-white text-sm inline-flex items-center">
             <UserPlus className="w-4 h-4 mr-1" />
             Apply for Membership
           </Link>
