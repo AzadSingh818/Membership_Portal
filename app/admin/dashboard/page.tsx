@@ -30,6 +30,7 @@ import {
   Briefcase,
   Building,
   AlertCircle,
+  Loader2,
 } from "lucide-react"
 import Link from "next/link"
 import { Label } from "@radix-ui/react-label"
@@ -69,9 +70,12 @@ interface CurrentAdmin {
   email: string
   phone?: string
   experience?: string
-  appointerName?: string
+  appointer?: string
   organizationId?: number
   organizationName?: string
+  firstName?: string
+  lastName?: string
+  status?: string
 }
 
 export default function AdminDashboard() {
@@ -87,22 +91,83 @@ export default function AdminDashboard() {
   const [showDetailsDialog, setShowDetailsDialog] = useState(false)
 
   useEffect(() => {
-    // In a real app, get this from authentication context
-    const demoAdmin = {
-      id: "demo-admin-id",
-      name: "Demo Admin",
-      username: "demoadmin",
-      level: "admin",
-      email: "admin@demo.com",
-      experience: "5 years",
-      appointerName: "System Administrator",
-      organizationId: 1,
-      organizationName: "Demo Organization",
-    }
-    setCurrentAdmin(demoAdmin)
-    
+    // ✅ FIXED: Fetch real admin data instead of hardcoded demo data
+    fetchAdminProfile()
     fetchData()
   }, [])
+
+  // ✅ NEW: Fetch real admin profile data
+  const fetchAdminProfile = async () => {
+    try {
+      console.log('🔍 Fetching admin profile...')
+      const response = await fetch("/api/admin/profile", {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+      })
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          // Redirect to login if not authenticated
+          window.location.href = "/admin/login"
+          return
+        }
+        throw new Error("Failed to fetch admin profile")
+      }
+
+      const data = await response.json()
+      
+      if (data.success && data.admin) {
+        const admin = data.admin
+        console.log("✅ Admin profile loaded:", admin)
+        
+        setCurrentAdmin({
+          id: admin.id.toString(),
+          name: admin.name,
+          username: admin.username,
+          level: admin.level || 'admin',
+          email: admin.email,
+          phone: admin.phone,
+          experience: admin.experience,
+          appointer: admin.appointer,
+          organizationId: admin.organizationId,
+          organizationName: admin.organizationName,
+          firstName: admin.firstName,
+          lastName: admin.lastName,
+          status: admin.status
+        })
+      } else {
+        throw new Error(data.error || "No admin data found")
+      }
+    } catch (err: any) {
+      console.error("❌ Error fetching admin profile:", err)
+      setError(err.message || "Failed to load admin profile")
+      
+      // ✅ FALLBACK: Use demo data if API fails
+      if (err.message.includes("auth") || err.message.includes("401")) {
+        setTimeout(() => {
+          window.location.href = "/admin/login"
+        }, 2000)
+      } else {
+        // Use demo admin as fallback for development
+        const demoAdmin = {
+          id: "demo-admin-id",
+          name: "Demo Admin",
+          username: "demoadmin",
+          level: "admin",
+          email: "admin@demo.com",
+          experience: "5 years",
+          appointer: "System Administrator",
+          organizationId: 1,
+          organizationName: "Demo Organization",
+        }
+        setCurrentAdmin(demoAdmin)
+        console.log("⚠️ Using demo admin data as fallback")
+      }
+    }
+  }
 
   const fetchData = async () => {
     try {
@@ -120,10 +185,14 @@ export default function AdminDashboard() {
 
   const fetchMemberApplications = async () => {
     try {
-      // In a real app, this would use the admin's organization ID
-      const response = await fetch("/api/admin/member-applications")
+      console.log('📋 Fetching member applications...')
+      const response = await fetch("/api/admin/member-applications", {
+        method: "GET",
+        credentials: "include",
+      })
       if (response.ok) {
         const data = await response.json()
+        console.log('✅ Member applications loaded:', data.applications?.length || 0)
         setMemberApplications(data.applications || [])
       }
     } catch (err) {
@@ -133,9 +202,14 @@ export default function AdminDashboard() {
 
   const fetchMembers = async () => {
     try {
-      const response = await fetch("/api/admin/members")
+      console.log('👥 Fetching members...')
+      const response = await fetch("/api/admin/members", {
+        method: "GET",
+        credentials: "include",
+      })
       if (response.ok) {
         const data = await response.json()
+        console.log('✅ Members loaded:', data.members?.length || 0)
         setMembers(data.members || [])
       }
     } catch (err) {
@@ -145,38 +219,48 @@ export default function AdminDashboard() {
 
   const handleApproveMember = async (applicationId: number) => {
     try {
+      setLoading(true)
+      console.log('✅ Approving member application:', applicationId)
       const response = await fetch(`/api/admin/member-approve/${applicationId}`, {
         method: "POST",
+        credentials: "include",
       })
       
       if (response.ok) {
         setSuccess("Member application approved successfully")
-        fetchMemberApplications()
-        fetchMembers()
+        await fetchMemberApplications()
+        await fetchMembers()
       } else {
         const data = await response.json()
         setError(data.error || "Failed to approve member application")
       }
     } catch (err) {
       setError("Error approving member application")
+    } finally {
+      setLoading(false)
     }
   }
 
   const handleRejectMember = async (applicationId: number) => {
     try {
+      setLoading(true)
+      console.log('❌ Rejecting member application:', applicationId)
       const response = await fetch(`/api/admin/member-reject/${applicationId}`, {
         method: "POST",
+        credentials: "include",
       })
       
       if (response.ok) {
         setSuccess("Member application rejected")
-        fetchMemberApplications()
+        await fetchMemberApplications()
       } else {
         const data = await response.json()
         setError(data.error || "Failed to reject member application")
       }
     } catch (err) {
       setError("Error rejecting member application")
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -187,7 +271,10 @@ export default function AdminDashboard() {
 
   const handleLogout = async () => {
     try {
-      await fetch("/api/auth/logout", { method: "POST" })
+      await fetch("/api/auth/logout", { 
+        method: "POST",
+        credentials: "include"
+      })
       window.location.href = "/admin/login"
     } catch (err) {
       window.location.href = "/admin/login"
@@ -245,6 +332,19 @@ export default function AdminDashboard() {
     },
   ]
 
+  // ✅ LOADING STATE
+  if (loading && !currentAdmin) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="animate-spin h-8 w-8 text-red-600 mx-auto mb-4" />
+          <p className="text-gray-600">Loading admin dashboard...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // ✅ ERROR STATE - NO ADMIN DATA
   if (!currentAdmin) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -252,7 +352,9 @@ export default function AdminDashboard() {
           <CardContent className="p-6 text-center">
             <Shield className="w-12 h-12 mx-auto mb-4 text-gray-400" />
             <h2 className="text-lg font-semibold mb-2">Access Denied</h2>
-            <p className="text-gray-600 mb-4">Please login to access the admin dashboard.</p>
+            <p className="text-gray-600 mb-4">
+              {error || "Please login to access the admin dashboard."}
+            </p>
             <Link href="/admin/login">
               <Button>Go to Login</Button>
             </Link>
@@ -275,7 +377,7 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <h1 className="text-xl font-semibold text-gray-900">Admin Dashboard</h1>
-                  <p className="text-xs text-gray-500">Welcome, {currentAdmin.name}</p>
+                  <p className="text-xs text-gray-500">Welcome, {currentAdmin.firstName || currentAdmin.name}</p>
                 </div>
               </div>
               {getLevelBadge(currentAdmin.level)}
@@ -284,10 +386,12 @@ export default function AdminDashboard() {
               <div className="flex items-center space-x-2">
                 <Avatar className="w-8 h-8">
                   <AvatarFallback className="bg-red-100 text-red-600">
-                    {currentAdmin.name
-                      .split(" ")
-                      .map((n) => n[0])
-                      .join("")}
+                    {currentAdmin.firstName && currentAdmin.lastName
+                      ? `${currentAdmin.firstName[0]}${currentAdmin.lastName[0]}`
+                      : currentAdmin.name
+                          .split(" ")
+                          .map((n) => n[0])
+                          .join("")}
                   </AvatarFallback>
                 </Avatar>
                 <div className="hidden sm:block">
@@ -315,6 +419,14 @@ export default function AdminDashboard() {
           <Alert variant="destructive" className="mb-6">
             <XCircle className="h-4 w-4" />
             <AlertDescription>{error}</AlertDescription>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="mt-2" 
+              onClick={() => setError("")}
+            >
+              Dismiss
+            </Button>
           </Alert>
         )}
         
@@ -322,20 +434,30 @@ export default function AdminDashboard() {
           <Alert className="mb-6 border-green-200 bg-green-50">
             <CheckCircle className="h-4 w-4 text-green-600" />
             <AlertDescription className="text-green-800">{success}</AlertDescription>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="mt-2" 
+              onClick={() => setSuccess("")}
+            >
+              Dismiss
+            </Button>
           </Alert>
         )}
 
-        {/* Admin Info Card */}
+        {/* Admin Info Card - ✅ REAL DATA */}
         <Card className="mb-6 bg-gradient-to-r from-red-50 to-red-100 border-red-200">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
                 <Avatar className="w-12 h-12">
                   <AvatarFallback className="bg-red-600 text-white">
-                    {currentAdmin.name
-                      .split(" ")
-                      .map((n) => n[0])
-                      .join("")}
+                    {currentAdmin.firstName && currentAdmin.lastName
+                      ? `${currentAdmin.firstName[0]}${currentAdmin.lastName[0]}`
+                      : currentAdmin.name
+                          .split(" ")
+                          .map((n) => n[0])
+                          .join("")}
                   </AvatarFallback>
                 </Avatar>
                 <div>
@@ -355,6 +477,12 @@ export default function AdminDashboard() {
                     <div className="flex items-center text-xs text-gray-500 mt-1">
                       <Building className="w-3 h-3 mr-1" />
                       <span>{currentAdmin.organizationName}</span>
+                    </div>
+                  )}
+                  {currentAdmin.phone && (
+                    <div className="flex items-center text-xs text-gray-500 mt-1">
+                      <Phone className="w-3 h-3 mr-1" />
+                      <span>{currentAdmin.phone}</span>
                     </div>
                   )}
                 </div>
@@ -479,6 +607,7 @@ export default function AdminDashboard() {
                                 size="sm" 
                                 className="bg-green-600 hover:bg-green-700"
                                 onClick={() => handleApproveMember(application.id)}
+                                disabled={loading}
                               >
                                 <UserCheck className="w-4 h-4 mr-2" />
                                 Approve
@@ -487,6 +616,7 @@ export default function AdminDashboard() {
                                 variant="destructive" 
                                 size="sm"
                                 onClick={() => handleRejectMember(application.id)}
+                                disabled={loading}
                               >
                                 <XCircle className="w-4 h-4 mr-2" />
                                 Reject
@@ -570,9 +700,56 @@ export default function AdminDashboard() {
                 <CardDescription>Manage your admin account settings</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-8 text-gray-500">
-                  <Settings className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-                  <p>Admin settings will be displayed here</p>
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <Label className="text-sm font-medium text-gray-600">Admin ID</Label>
+                      <p className="mt-1 text-sm font-mono bg-gray-50 px-2 py-1 rounded">{currentAdmin.id}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium text-gray-600">Username</Label>
+                      <p className="mt-1 text-sm text-gray-900">{currentAdmin.username}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <Label className="text-sm font-medium text-gray-600">Email</Label>
+                      <p className="mt-1 text-sm text-gray-900">{currentAdmin.email}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium text-gray-600">Role</Label>
+                      <div className="mt-1">{getLevelBadge(currentAdmin.level)}</div>
+                    </div>
+                  </div>
+
+                  {currentAdmin.phone && (
+                    <div>
+                      <Label className="text-sm font-medium text-gray-600">Phone</Label>
+                      <p className="mt-1 text-sm text-gray-900">{currentAdmin.phone}</p>
+                    </div>
+                  )}
+
+                  {currentAdmin.experience && (
+                    <div>
+                      <Label className="text-sm font-medium text-gray-600">Experience</Label>
+                      <p className="mt-1 text-sm text-gray-900">{currentAdmin.experience}</p>
+                    </div>
+                  )}
+
+                  {currentAdmin.organizationName && (
+                    <div>
+                      <Label className="text-sm font-medium text-gray-600">Organization</Label>
+                      <p className="mt-1 text-sm text-gray-900">{currentAdmin.organizationName}</p>
+                    </div>
+                  )}
+
+                  {/* <div className="border-t pt-4">
+                    <Button variant="outline">
+                      <Settings className="w-4 h-4 mr-2" />
+                      Edit Profile
+                    </Button>
+                  </div> */}
                 </div>
               </CardContent>
             </Card>
@@ -663,6 +840,7 @@ export default function AdminDashboard() {
                       handleRejectMember(selectedApplication.id)
                       setShowDetailsDialog(false)
                     }}
+                    disabled={loading}
                   >
                     Reject
                   </Button>
@@ -672,6 +850,7 @@ export default function AdminDashboard() {
                       handleApproveMember(selectedApplication.id)
                       setShowDetailsDialog(false)
                     }}
+                    disabled={loading}
                   >
                     Approve
                   </Button>
