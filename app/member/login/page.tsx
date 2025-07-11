@@ -171,24 +171,21 @@ export default function MemberLoginPage() {
             )}
           </div>
           <h1 className="text-2xl font-bold text-white">
-            {currentStep === 1 ? "Member Login" : "Verify OTP"}
+            Check Status
           </h1>
           <p className="text-blue-200">
-            {currentStep === 1
-              ? "Access your member dashboard"
-              : "Enter the verification code sent to your phone"
-            }
+            Access your status dashboard
           </p>
         </div>
 
         {/* Progress Indicator */}
-        <div className="space-y-2">
+        {/* <div className="space-y-2">
           <div className="flex justify-between text-sm text-blue-200">
             <span>Step {currentStep} of 2</span>
             <span>{currentStep === 1 ? "Credentials" : "OTP Verification"}</span>
           </div>
           <Progress value={(currentStep / 2) * 100} className="h-2" />
-        </div>
+        </div> */}
 
         {/* Login Forms */}
         <Card className="bg-white/95 backdrop-blur">

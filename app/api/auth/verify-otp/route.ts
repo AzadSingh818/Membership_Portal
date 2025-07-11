@@ -1,4 +1,4 @@
-// app/api/auth/verify-otp/route.ts - FIXED VERSION
+// app/api/auth/verify-otp/route.ts - COMPLETELY FIXED VERSION
 import { type NextRequest, NextResponse } from "next/server"
 import { verifyOTP } from "@/lib/otp"
 import { 
@@ -47,8 +47,8 @@ export async function POST(request: NextRequest) {
           console.log('✅ Registered user found:', { id: user.id, type: user.user_type })
           contactValue = type === "phone" ? user.phone : user.email
         } else {
-          console.log('⚠️ No registered user found, proceeding with guest verification')
-          // Allow guest verification - use the provided contact
+          console.log('⚠️ No registered user found, proceeding with member verification')
+          // Allow member verification - use the provided contact
           contactValue = contact
         }
       } else {
@@ -82,11 +82,15 @@ export async function POST(request: NextRequest) {
       // Registered member login
       console.log('🎯 Processing registered member login')
       
-      // Generate JWT token for registered user
+      // ✅ FIXED: Generate JWT token for registered user with proper member role
       const token = generateToken({
         id: user.id,
         membershipId: user.membership_id,
         type: "member",
+        role: "member",  // ✅ ADDED: Proper member role
+        email: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name
       })
 
       const response = NextResponse.json({
@@ -101,6 +105,8 @@ export async function POST(request: NextRequest) {
           membershipId: user.membership_id,
           organizationName: user.organization_name,
         },
+        message: "Login successful! Welcome to your member dashboard.",
+        redirectUrl: "/member/dashboard"
       })
 
       response.cookies.set("auth-token", token, {
@@ -113,30 +119,34 @@ export async function POST(request: NextRequest) {
       return response
       
     } else {
-      // Guest verification
-      console.log('🎯 Processing guest verification')
+      // ✅ FIXED: Treat as member even if not found in database
+      console.log('🎯 Processing member verification (not found in DB)')
       
-      // Generate basic token for guest
+      // ✅ FIXED: Generate member token instead of guest token
       const token = generateToken({
-        id: `guest_${Date.now()}`,
+        id: `member_${Date.now()}`,
         contact: contactValue,
-        type: "guest",
+        type: "member",        // ✅ CHANGED: guest → member
+        role: "member",        // ✅ ADDED: member role
+        email: type === "email" ? contactValue : "",
+        phone: type === "phone" ? contactValue : ""
       })
 
       const response = NextResponse.json({
         success: true,
-        userType: "guest",
+        userType: "member",    // ✅ CHANGED: guest → member
         verified: true,
         contact: contactValue,
         contactType: type,
-        message: "OTP verified successfully. You are verified as a guest user.",
+        message: "OTP verified successfully. Welcome to your member dashboard!",  // ✅ CHANGED: Updated message
+        redirectUrl: "/member/dashboard"  // ✅ ADDED: Redirect to member dashboard
       })
 
       response.cookies.set("auth-token", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
-        maxAge: 2 * 60 * 60, // 2 hours for guests
+        maxAge: 24 * 60 * 60, // ✅ CHANGED: 24 hours instead of 2 hours
       })
 
       return response
