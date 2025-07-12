@@ -522,15 +522,15 @@ const HomePage: React.FC = () => {
                   professional development.
                 </p>
                 <div className="space-y-4">
-                  <div className="flex items-start space-x-3">
+                  {/* <div className="flex items-start space-x-3">
                     <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center mt-1">
                       <span className="text-white text-sm">✓</span>
                     </div>
                     <span className="text-gray-700">
                       Founded in 2020 with a vision to modernize membership management
                     </span>
-                  </div>
-                  <div className="flex items-start space-x-3">
+                  </div> */}
+                  {/* <div className="flex items-start space-x-3">
                     <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center mt-1">
                       <span className="text-white text-sm">✓</span>
                     </div>
@@ -541,7 +541,7 @@ const HomePage: React.FC = () => {
                       <span className="text-white text-sm">✓</span>
                     </div>
                     <span className="text-gray-700">Trusted by 10,000+ active professional members</span>
-                  </div>
+                  </div> */}
                 </div>
               </div>
             </div>
@@ -670,7 +670,7 @@ const HomePage: React.FC = () => {
             </div>
 
             {/* Statistics Section */}
-            <div className="bg-blue-600 rounded-2xl p-8 md:p-12">
+            {/* <div className="bg-blue-600 rounded-2xl p-8 md:p-12">
               <div className="grid md:grid-cols-4 gap-8 text-center text-white">
                 <div>
                   <div className="text-3xl md:text-4xl font-bold mb-2">10,000+</div>
@@ -689,7 +689,7 @@ const HomePage: React.FC = () => {
                   <div className="text-blue-100 text-sm md:text-base">Satisfaction Rate</div>
                 </div>
               </div>
-            </div>
+            </div> */}
           </div>
         </div>
       </section>
